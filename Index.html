@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Daugybos Lentelė • Mokymasis + Testas (LT)</title>
+  <style>
+    :root{--bg:#0f1220;--card:#171a2b;--text:#e8ebff;--muted:#9aa1c2;--acc:#7aa2ff;--good:#40c463;--bad:#ff5d73;--btn:#222643}
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial;background:radial-gradient(1200px 700px at 20% -10%,#1a1f3a,var(--bg));color:var(--text)}
+    header{display:flex;gap:.75rem;align-items:center;justify-content:space-between;padding:12px 14px;position:sticky;top:0;z-index:10;background:linear-gradient(180deg,rgba(15,18,32,.95),rgba(15,18,32,.6) 70%,rgba(15,18,32,0));backdrop-filter:blur(6px)}
+    button,.chip,select,input[type=range]{background:var(--btn);border:1px solid #2c3158;color:var(--text);padding:10px 12px;border-radius:12px;cursor:pointer;font-weight:600}
+    button:hover{transform:translateY(-1px);filter:brightness(1.05);transition:.15s}
+    main{max-width:1000px;margin:0 auto;padding:10px 14px 110px}
+    .card{background:linear-gradient(180deg,#171a2b,#111427);border:1px solid #242844;border-radius:16px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+    canvas{width:100%;height:calc(100svh - 360px);display:block;background:var(--card);border-radius:12px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .stat{background:#111427;border:1px solid #242844;padding:8px 10px;border-radius:10px;color:var(--muted)}
+    .kbd{background:#0b0e1d;border:1px solid #2c3158;border-bottom:2px solid #0b0e1d;padding:6px 10px;border-radius:8px;font-weight:700}
+    .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+    .keypad button{font-size:1.2rem;padding:14px 0}
+    .hidden{display:none!important}
+    .grid-legend{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+    .legend-box{width:22px;height:22px;border-radius:6px;border:1px solid #30355f}
+    footer{position:fixed;left:0;right:0;bottom:0;padding:10px 14px;background:linear-gradient(0deg,rgba(15,18,32,.95),rgba(15,18,32,.6) 70%,rgba(15,18,32,0));backdrop-filter:blur(6px)}
+    .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);padding:10px 14px;background:#10132a;border:1px solid #2f3462;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.4);display:none}
+    .toast.show{display:block}
+    .banner{background:#2a1f1f;border:1px solid #6b2d2d;color:#ffd3d3;padding:10px;border-radius:10px;margin:10px 0}
+    .chip{padding:6px 10px;font-size:.9rem;opacity:.9} .chip.active{outline:2px solid var(--acc);opacity:1}
+    .slider{display:flex;align-items:center;gap:8px}
+    .slider input{width:140px}
+  </style>
+</head>
+<body>
+  <header>
+    <div style="font-weight:700">🧠 Daugybos Lentelė • Mokymasis + Testas</div>
+    <div class="row">
+      <button id="btnLearn" aria-pressed="true">📊 Mokymasis</button>
+      <button id="btnQuiz">🎯 Testas</button>
+      <button id="btnReset" title="Išvalyti pažangą">♻️ Nulis</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="card row" style="justify-content:space-between">
+      <div class="row">
+        <div class="stat">Režimas: <b id="learnModeText">Pilna</b></div>
+        <div class="stat">Tikslumas: <b id="acc">–</b></div>
+        <div class="stat">Streak: <b id="streak">0</b></div>
+        <div class="stat">Silpnos: <b id="weak">–</b></div>
+      </div>
+      <div class="row">
+        <span id="supportBadge" class="stat">TTS/STT palaikymas: tikrinama…</span>
+        <select id="voiceSelect" title="Balsas"></select>
+        <button id="toggleTTS">🔊 Balsu: IŠJ</button>
+        <button id="toggleSTT">🎤 Ats. balsu: IŠJ</button>
+      </div>
+    </div>
+
+    <div id="noLtBanner" class="banner" style="display:none">
+      🔇 Nerastas lietuviškas TTS balsas. Variantai: iOS paprastai neturi LT balso; Android/Chrome dažnai turi. Gali pasirinkti kitą balsą ir palikti kalbą „lt-LT“ – skaitys lietuviškai, bet su kitos kalbos akcentu.
+    </div>
+
+    <div id="learnChips" class="row">
+      <span class="chip active" data-learn="full">🟩 Pilna</span>
+      <span class="chip" data-learn="covered">🟪 Uždengta</span>
+      <span class="chip" id="toggleHints">💡 Rodyti veiksmą</span>
+    </div>
+
+    <div class="grid-legend" id="legend"></div>
+
+    <div class="card">
+      <canvas id="board" width="1000" height="600" aria-label="Daugybos lentelė"></canvas>
+
+      <div id="quizPanel" class="row hidden" style="margin-top:10px;justify-content:space-between">
+        <div class="row" style="gap:10px">
+          <span class="kbd" id="prompt">7 × 8 = ?</span>
+          <input id="answer" inputmode="numeric" pattern="[0-9]*" class="kbd" placeholder="ats." style="min-width:80px;text-align:center" autocomplete="off" autocapitalize="none" autocorrect="off">
+          <button id="submit">OK</button>
+          <button id="skip">Praleisti</button>
+          <button id="reveal">👁️</button>
+        </div>
+        <div class="row">
+          <button id="hardOnly" class="chip">🎯 Tik sunkios</button>
+          <button id="nineTrick" class="chip">✋ 9 triukas</button>
+          <div class="slider">⏱️ Greitis <span id="rateVal">1.0</span>
+            <input id="rate" type="range" min="0.6" max="1.4" step="0.05" value="1.0">
+          </div>
+          <div class="slider">🎚️ Aukštis <span id="pitchVal">1.0</span>
+            <input id="pitch" type="range" min="0.7" max="1.3" step="0.05" value="1.0">
+          </div>
+        </div>
+      </div>
+
+      <div id="keypad" class="keypad hidden"></div>
+    </div>
+  </main>
+
+  <footer class="row">
+    <small style="color:var(--muted)">
+      ⚙️ Mokymosi režimai: <b>Pilna</b> – skaičiai matosi; <b>Uždengta</b> – „?“ iki palieti (atsakymas parodomas); 💡 – rodyti veiksmą kaip užuominą. Teste gali įjungti/išjungti balsą ir atsakyti balsu (jei palaikoma).
+    </small>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+(()=>{
+  // ---------- Canvas + Learn modes ----------
+  const DPR = Math.max(1, Math.min(window.devicePixelRatio||1, 2));
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const COLORS=["#7aa2ff","#9f7aff","#ff7ad9","#ff7a7a","#ffb87a","#ffd37a","#d1ff7a","#7affb8","#7afff4","#7ac8ff"];
+  const grid={x:0,y:0,w:10,h:10,cell:0,ox:0,oy:0};
+  let highlight={row:-1,col:-1,cell:null};
+  let learnMode='full'; // 'covered'
+  let showHints=false;
+  let longPressTimer=null;
+
+  function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 1400); }
+  function resize(){ const r=canvas.getBoundingClientRect(); canvas.width=Math.floor(r.width*DPR); canvas.height=Math.floor((r.height||500)*DPR); ctx.setTransform(DPR,0,0,DPR,0,0); computeGrid(); draw(); }
+  function computeGrid(){ const pad=14, header=36; const w=canvas.clientWidth - pad*2, h=canvas.clientHeight - pad*2;
+    const c=Math.floor(Math.min((w-header)/10,(h-header)/10)); grid.cell=c; grid.ox=pad+header; grid.oy=pad+header; grid.x=pad; grid.y=pad; }
+  function drawRoundedRect(x,y,w,h,r){const rr=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+rr,y); ctx.arcTo(x+w,y,x+w,y+h,rr); ctx.arcTo(x+w,y+h,x,y+h,rr); ctx.arcTo(x,y+h,x,y,rr); ctx.arcTo(x,y,x+w,y,rr); ctx.closePath();}
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    const c=grid.cell, ox=grid.ox, oy=grid.oy;
+    // header bg
+    drawRoundedRect(grid.x,grid.y,grid.w*c+c,c,10); ctx.fillStyle="#0b0e1d"; ctx.fill();
+    drawRoundedRect(grid.x,grid.y,c,grid.h*c+c,10); ctx.fill();
+    // headers
+    ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.font="bold 16px system-ui";
+    for(let i=0;i<10;i++){
+      ctx.fillStyle=COLORS[i%COLORS.length]; ctx.fillRect(ox+i*c,grid.y,c-2,c-2);
+      ctx.fillStyle="#0b0e1d"; ctx.globalAlpha=.18; ctx.fillRect(ox+i*c,grid.y,c-2,c-2); ctx.globalAlpha=1;
+      ctx.fillStyle="#e8ebff"; ctx.fillText(i+1, ox+i*c+c/2, grid.y+c/2);
+
+      ctx.fillStyle=COLORS[i%COLORS.length]; ctx.fillRect(grid.x,oy+i*c,c-2,c-2);
+      ctx.fillStyle="#0b0e1d"; ctx.globalAlpha=.18; ctx.fillRect(grid.x,oy+i*c,c-2,c-2); ctx.globalAlpha=1;
+      ctx.fillStyle="#e8ebff"; ctx.fillText(i+1, grid.x+c/2, oy+i*c+c/2);
+    }
+    // grid
+    for(let y=0;y<10;y++){
+      for(let x=0;x<10;x++){
+        const vx=ox+x*c, vy=oy+y*c, a=y+1, b=x+1, product=a*b;
+        ctx.fillStyle="#171a2b"; ctx.fillRect(vx,vy,c-2,c-2);
+        ctx.fillStyle=COLORS[x%COLORS.length]; ctx.globalAlpha=.08 + (a===b? .05:0); ctx.fillRect(vx,vy,c-2,c-2); ctx.globalAlpha=1;
+        if (highlight.row===y || highlight.col===x){ ctx.fillStyle="rgba(122,162,255,0.18)"; ctx.fillRect(vx,vy,c-2,c-2); }
+        ctx.fillStyle="#cdd5ff"; ctx.font="600 14px system-ui";
+        let text = (learnMode==='full') ? product : "?";
+        if (learnMode==='covered' && highlight.cell && highlight.cell.x===x && highlight.cell.y===y) text = product;
+        if (text!=="") ctx.fillText(text, vx+c/2, vy+c/2);
+      }
+    }
+    // axes label
+    ctx.fillStyle="#9aa1c2"; ctx.font="bold 14px system-ui"; ctx.textAlign="left"; ctx.fillText("×", grid.x+8, grid.y+16);
+  }
+  function cellFromPoint(px,py){ const c=grid.cell, ox=grid.ox, oy=grid.oy; const x=Math.floor((px-ox)/c), y=Math.floor((py-oy)/c); if(x<0||y<0||x>=10||y>=10) return null; return {x,y}; }
+  function onTapCell(cell, {longPress=false}={}){
+    const a=cell.y+1, b=cell.x+1, prod=a*b;
+    highlight.row=cell.y; highlight.col=cell.x; highlight.cell=cell;
+    draw();
+    if (learnMode==='covered'){
+      if (showHints) showToast(`${a}×${b}`);
+      // reveal for 900ms then hide again
+      setTimeout(()=>{ highlight.cell=null; draw(); }, 900);
+    } else { // full
+      const txt = showHints? `${a}×${b}=${prod}` : `${a}×${b}=${prod}`;
+      showToast(txt);
+    }
+  }
+  canvas.addEventListener('pointerdown',(e)=>{
+    const r=canvas.getBoundingClientRect(); const cell=cellFromPoint(e.clientX-r.left, e.clientY-r.top);
+    if(!cell) return;
+    longPressTimer = setTimeout(()=>{ onTapCell(cell,{longPress:true}); longPressTimer=null; }, 450);
+  });
+  canvas.addEventListener('pointerup',(e)=>{
+    const r=canvas.getBoundingClientRect(); const cell=cellFromPoint(e.clientX-r.left, e.clientY-r.top);
+    if(!cell) return;
+    if (longPressTimer){ clearTimeout(longPressTimer); longPressTimer=null; onTapCell(cell); }
+  });
+  canvas.addEventListener('pointerleave',()=>{ if(longPressTimer){clearTimeout(longPressTimer); longPressTimer=null;} });
+
+  // chips
+  document.querySelectorAll('[data-learn]').forEach(ch=> ch.addEventListener('click', ()=>{
+    document.querySelectorAll('[data-learn]').forEach(x=>x.classList.remove('active')); ch.classList.add('active');
+    learnMode = ch.dataset.learn; document.getElementById('learnModeText').textContent = ch.textContent.replace(/^[^\s]+\s/,'').trim(); draw();
+  }));
+  document.getElementById('toggleHints').addEventListener('click', (e)=>{ showHints=!showHints; e.currentTarget.classList.toggle('active'); });
+
+  // ---------- Quiz + Stats ----------
+  const promptEl=document.getElementById('prompt'), answerEl=document.getElementById('answer');
+  const accEl=document.getElementById('acc'), streakEl=document.getElementById('streak'), weakEl=document.getElementById('weak');
+  const hardOnlyBtn=document.getElementById('hardOnly'); const nineTrickBtn=document.getElementById('nineTrick');
+  const rateEl=document.getElementById('rate'), pitchEl=document.getElementById('pitch'), rateVal=document.getElementById('rateVal'), pitchVal=document.getElementById('pitchVal');
+  let current={a:7,b:8};
+
+  const saved = JSON.parse(localStorage.getItem('daugyba_state')||'{}');
+  const state={correct:saved.correct||0,total:saved.total||0,streak:saved.streak||0,mistakes:saved.mistakes||{}, hardPairs:new Set(JSON.parse(localStorage.getItem('hardPairs')||'[]').map(JSON.stringify))};
+  function save(){ localStorage.setItem('daugyba_state', JSON.stringify(state)); localStorage.setItem('hardPairs', JSON.stringify(Array.from(state.hardPairs).map(JSON.parse))); }
+  function accuracy(){ return state.total? (Math.round(100*state.correct/state.total)+'%') : '–'; }
+  function formatWeak(){ const e=Object.entries(state.mistakes).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k])=>k); weakEl.textContent = e.length? e.join(', ') : '–'; }
+  function updateStats(){ accEl.textContent=accuracy(); streakEl.textContent=state.streak; formatWeak(); }
+  function weightedChoice(items){ const sum=items.reduce((s,it)=>s+it.weight,0); let r=Math.random()*sum; for(const it of items){ if((r-=it.weight)<=0) return it; } return items[0]; }
+  function pickRandomPair(){
+    const pairs=[];
+    for(let a=1;a<=10;a++) for(let b=1;b<=10;b++){
+      const key=`${a}×${b}`; let weight=1;
+      if(state.mistakes[key]) weight+=Math.min(5,state.mistakes[key]);
+      if(state.hardPairs.has(JSON.stringify([a,b]))) weight+=3;
+      pairs.push({a,b,weight});
+    }
+    if (hardOnlyBtn.classList.contains('active')){
+      const hard=pairs.filter(p=> state.hardPairs.has(JSON.stringify([p.a,p.b])) || state.mistakes[`${p.a}×${p.b}`]);
+      if (hard.length) return weightedChoice(hard);
+    }
+    return weightedChoice(pairs);
+  }
+  function ask(){ current=pickRandomPair(); promptEl.textContent=`${current.a} × ${current.b} = ?`; speakQuestion(); answerEl.value=""; answerEl.focus(); }
+  function markMistake(a,b){ const k=`${a}×${b}`; state.mistakes[k]=(state.mistakes[k]||0)+1; save(); updateStats(); }
+  function markCorrect(){ state.correct++; state.total++; state.streak++; updateStats(); save(); }
+  function markWrong(){ state.total++; state.streak=0; updateStats(); save(); }
+  function submit(){ const val=parseInt(answerEl.value,10); if(Number.isNaN(val)) return; const prod=current.a*current.b;
+    if (val===prod){ showToast("✅ Teisingai!"); speakFeedback(true,prod); markCorrect(); ask(); }
+    else { showToast(`❌ Ne – ${prod}`); speakFeedback(false,prod); markWrong(); markMistake(current.a,current.b); setTimeout(ask,350); } }
+  document.getElementById('submit').addEventListener('click', submit);
+  document.getElementById('skip').addEventListener('click', ()=>{ ask(); showToast("Praleista ⏭️"); });
+  document.getElementById('reveal').addEventListener('click', ()=> showToast(`${current.a}×${current.b}=${current.a*current.b}`));
+  answerEl.addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+  nineTrickBtn.addEventListener('click', ()=> showToast("9 triukas: nuleisk n-tą pirštą – kairė dešimtys, dešinė vienetai ✋"));
+
+  // ---------- Voice (TTS + optional STT) ----------
+  const supportBadge=document.getElementById('supportBadge'), voiceSel=document.getElementById('voiceSelect');
+  const toggleTTS=document.getElementById('toggleTTS'), toggleSTT=document.getElementById('toggleSTT'), noLt=document.getElementById('noLtBanner');
+  const synth = window.speechSynthesis;
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  supportBadge.textContent = `TTS: ${synth?'yra':'nėra'} • STT: ${Rec?'yra':'nėra'}`;
+
+  let voices=[], selVoice=null, ttsOn=false, sttOn=false;
+  function populateVoices(){
+    voices = synth ? synth.getVoices() : [];
+    voiceSel.innerHTML="";
+    let hasLt=false;
+    voices.forEach(v=>{ if(/(^lt\b|lt-LT|Lithuanian)/i.test(v.lang) || /Lietuvi/.test(v.name)) hasLt=true; });
+    if (!hasLt) noLt.style.display='block';
+    if (!voices.length){ const o=document.createElement('option'); o.textContent='(balsų nėra)'; o.value=''; voiceSel.appendChild(o); selVoice=null; return; }
+    voices.forEach(v=>{ const o=document.createElement('option'); o.value=v.name; o.textContent=`${v.name} (${v.lang})`; voiceSel.appendChild(o); });
+    selVoice = voices.find(v=>/lt-LT/i.test(v.lang)) || voices[0] || null;
+  }
+  if (synth){ populateVoices(); if (typeof synth.onvoiceschanged!=='undefined') synth.onvoiceschanged=populateVoices; }
+  else { const o=document.createElement('option'); o.textContent='(TTS nepalaikomas)'; o.value=''; voiceSel.appendChild(o); }
+  voiceSel.addEventListener('change', ()=>{ selVoice = voices.find(v=>v.name===voiceSel.value) || selVoice; });
+
+  function speak(text){
+    if (!ttsOn || !synth) return;
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang = (selVoice && selVoice.lang) || 'lt-LT';
+    if (selVoice) u.voice = selVoice;
+    u.rate = parseFloat(rateEl.value)||1.0;
+    u.pitch = parseFloat(pitchEl.value)||1.0;
+    try{ synth.cancel(); synth.speak(u);}catch(e){}
+  }
+  function speakQuestion(){ if(!ttsOn) return; speak(`${current.a} kart ${current.b}. Kiek bus?`); if (sttOn) startListen(); }
+  function speakFeedback(ok,prod){ if(!ttsOn) return; if(ok) speak("Teisingai!"); else speak(`Ne. Teisingas atsakymas: ${prod}.`); }
+  toggleTTS.addEventListener('click', ()=>{ ttsOn=!ttsOn; showToast(`Balsas: ${ttsOn?"Įjungtas":"Išjungtas"}`); if (ttsOn) speak("Balso režimas įjungtas."); });
+
+  // STT
+  let recog=null;
+  function startListen(){
+    if (!sttOn || !Rec) return;
+    if (recog){ try{recog.stop();}catch(e){} recog=null; }
+    recog = new Rec();
+    recog.lang='lt-LT'; recog.interimResults=false; recog.maxAlternatives=1;
+    recog.onresult=(e)=>{ const txt=(e.results[0] && e.results[0][0] && e.results[0][0].transcript || "").trim(); const num=parseInt(txt.replace(/[^0-9]/g,''),10);
+      if (!Number.isNaN(num)){ answerEl.value=String(num); submit(); } else { showToast("Nesupratau skaičiaus 🎤"); speak("Nesupratau. Pakartok."); } };
+    recog.onerror=()=>{ showToast("STT klaida / nepalaikoma 🎤"); };
+    try{ recog.start(); }catch(e){}
+  }
+  toggleSTT.addEventListener('click', ()=>{ sttOn=!sttOn; showToast(`Ats. balsu: ${sttOn?"Įjungtas":"Išjungtas"}`); if (sttOn && !Rec) showToast("Ši naršyklė greičiausiai nepalaiko balso atpažinimo."); });
+
+  // ---------- Mode switching ----------
+  const btnLearn=document.getElementById('btnLearn'), btnQuiz=document.getElementById('btnQuiz'), btnReset=document.getElementById('btnReset');
+  function setMode(m){ if (m==='learn'){ document.getElementById('quizPanel').classList.add('hidden'); document.getElementById('keypad').classList.add('hidden'); }
+    else { document.getElementById('quizPanel').classList.remove('hidden'); if (/iPhone|Android|iPad/i.test(navigator.userAgent)) document.getElementById('keypad').classList.remove('hidden'); ask(); }
+    draw();
+  }
+  btnLearn.addEventListener('click', ()=> setMode('learn'));
+  btnQuiz.addEventListener('click', ()=> setMode('quiz'));
+  btnReset.addEventListener('click', ()=>{
+    if (confirm("Išvalyti pažangą?")){ localStorage.removeItem('daugyba_state'); localStorage.removeItem('hardPairs');
+      state.correct=0;state.total=0;state.streak=0;state.mistakes={};state.hardPairs=new Set(); updateStats(); draw(); }
+  });
+
+  // keypad for mobile
+  function buildKeypad(){
+    const keypad=document.getElementById('keypad');
+    keypad.innerHTML=""; const keys=["7","8","9","4","5","6","1","2","3","⌫","0","OK"];
+    keys.forEach(k=>{ const b=document.createElement('button'); b.textContent=k;
+      b.addEventListener('click', ()=>{ if(k==="OK") submit(); else if(k==="⌫") answerEl.value=answerEl.value.slice(0,-1); else answerEl.value+=k; answerEl.focus(); });
+      keypad.appendChild(b);
+    });
+  }
+
+  // init
+  window.addEventListener('resize', resize);
+  function buildLegend(){ const legend=document.getElementById('legend'); legend.innerHTML=""; for(let i=0;i<10;i++){ const d=document.createElement('div'); d.className='legend-box'; d.style.background=COLORS[i%COLORS.length]; d.title=(i+1)+' stulpelis'; legend.appendChild(d);} }
+  buildLegend(); buildKeypad(); resize(); updateStats(); setMode('learn');
+  rateEl.addEventListener('input', ()=> rateVal.textContent=rateEl.value);
+  pitchEl.addEventListener('input', ()=> pitchVal.textContent=pitchEl.value);
+})();
+</script>
+</body>
+</html>
